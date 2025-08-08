@@ -4,7 +4,7 @@ set -euo pipefail
 LOGTAG="watchdog"
 
 check_health() {
-  if ! curl -sf http://127.0.0.1:8001/health | jq -e '.ok==true' >/dev/null; then
+  if ! curl -sf http://127.0.0.1:8001/healthz | jq -e '.status=="ok"' >/dev/null; then
     logger -t "$LOGTAG" "API health failed; restarting data-api.service"
     systemctl restart data-api.service
   fi
@@ -19,6 +19,17 @@ ensure_active() {
 }
 
 check_health
+
+# Check if data is being collected (latest_ts should not be null)
+check_data_freshness() {
+  local latest_ts=$(curl -sf http://127.0.0.1:8001/healthz | jq -r '.latest_ts // empty')
+  if [ -z "$latest_ts" ] || [ "$latest_ts" = "null" ]; then
+    logger -t "$LOGTAG" "No data being collected; restarting data-streamer.service"
+    systemctl restart data-streamer.service
+  fi
+}
+
+check_data_freshness
 ensure_active data-streamer.service
 ensure_active ob-streamer.service
 ensure_active futures-metrics.service
